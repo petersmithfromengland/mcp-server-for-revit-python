@@ -22,6 +22,7 @@ class TestOpenDocument:
             "/open_document/",
             {"file_path": "C:/test.rvt", "detach": False, "audit": False},
             None,
+            timeout=120.0,
         )
 
     async def test_open_detach_flag(self, doc_tools, mock_revit_post):
@@ -72,6 +73,7 @@ class TestSyncWithCentral:
             "/sync_with_central/",
             {"comment": "", "compact": False, "relinquish_all": True},
             None,
+            timeout=120.0,
         )
 
     async def test_sync_custom(self, doc_tools, mock_revit_post):

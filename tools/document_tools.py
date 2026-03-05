@@ -31,7 +31,7 @@ def register_document_tools(mcp, revit_get, revit_post):
             "detach": detach,
             "audit": audit,
         }
-        response = await revit_post("/open_document/", data, ctx)
+        response = await revit_post("/open_document/", data, ctx, timeout=120.0)
         return format_response(response)
 
     @mcp.tool()
@@ -89,5 +89,5 @@ def register_document_tools(mcp, revit_get, revit_post):
             "compact": compact,
             "relinquish_all": relinquish_all,
         }
-        response = await revit_post("/sync_with_central/", data, ctx)
+        response = await revit_post("/sync_with_central/", data, ctx, timeout=120.0)
         return format_response(response)

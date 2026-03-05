@@ -8,8 +8,14 @@ from pyrevit import routes, revit, DB
 import tempfile
 import os
 import base64
+import json
 import logging
 from System.Collections.Generic import List
+
+try:
+    from urllib.parse import unquote
+except ImportError:
+    from urllib import unquote
 
 from utils import normalize_string, get_element_name, element_id_value
 
@@ -37,6 +43,9 @@ def register_views_routes(api):
                     data={"error": "No active Revit document"}, status=503
                 )
 
+            # Decode URL-encoded characters (e.g. %20 -> space)
+            # httpx encodes the path but pyRevit's router doesn't decode params
+            view_name = unquote(view_name)
             # Normalize the view name
             view_name = normalize_string(view_name)
             logger.info("Exporting view: {}".format(view_name))
@@ -210,8 +219,6 @@ def register_views_routes(api):
                     data={"error": "No active Revit document"}, status=503
                 )
 
-            logger.info("Listing all exportable views")
-
             # Get all views
             all_views = DB.FilteredElementCollector(doc).OfClass(DB.View).ToElements()
 
@@ -368,17 +375,17 @@ def register_views_routes(api):
                 status=500,
             )
 
-    @api.route("/current_view_elements/", methods=["GET"])
-    def get_current_view_elements(doc, uidoc):
+    @api.route("/current_view_elements/", methods=["POST"])
+    def get_current_view_elements(doc, uidoc, request):
         """
         Get all elements visible in the current view.
 
-        Args:
-            doc: Revit document (provided by MCP context)
-            uidoc: UIDocument (provided by MCP context)
-
-        Returns:
-            dict: List of elements with detailed information
+        Expected JSON payload (all fields optional):
+        {
+            "limit": 5000,
+            "include_levels": false,
+            "include_location": false
+        }
         """
         try:
             if not doc or not uidoc:
@@ -392,110 +399,147 @@ def register_views_routes(api):
                     data={"error": "No active view found"}, status=404
                 )
 
-            logger.info("Getting elements in current view")
+            # Parse optional parameters from request body
+            limit = 5000
+            include_levels = False
+            include_location = False
+            try:
+                if request and request.data:
+                    data = (
+                        json.loads(request.data)
+                        if isinstance(request.data, str)
+                        else request.data
+                    )
+                    limit = int(data.get("limit", 5000))
+                    include_levels = bool(data.get("include_levels", False))
+                    include_location = bool(data.get("include_location", False))
+            except Exception:
+                pass  # Use defaults if parsing fails
 
             # Get all elements in the current view
             collector = DB.FilteredElementCollector(doc, current_view.Id)
             elements = collector.WhereElementIsNotElementType().ToElements()
 
-            # Process elements to get basic information
+            # Level cache to avoid redundant doc.GetElement() calls
+            level_cache = {}  # {int(level_id): {"name": str, "id": int}}
+
+            # Process elements, tracking category counts for ALL elements
             elements_info = []
+            category_counts = {}
+            total_elements = 0
+
             for elem in elements:
                 try:
+                    # Get category name for counting (always counted, even beyond limit)
+                    cat = elem.Category
+                    if cat:
+                        cat_name = cat.Name
+                    else:
+                        cat_name = "Unknown"
+
+                    if cat_name in category_counts:
+                        category_counts[cat_name] = category_counts[cat_name] + 1
+                    else:
+                        category_counts[cat_name] = 1
+                    total_elements = total_elements + 1
+
+                    # Only build full element info up to the limit
+                    if len(elements_info) >= limit:
+                        continue
+
                     element_info = {
                         "element_id": element_id_value(elem.Id),
                         "name": normalize_string(get_element_name(elem)),
-                        "element_type": elem.GetType().Name,
+                        "category": cat_name,
                     }
 
-                    # Add category information
-                    if elem.Category:
-                        element_info["category"] = elem.Category.Name
-                        element_info["category_id"] = element_id_value(elem.Category.Id)
+                    if cat:
+                        element_info["category_id"] = element_id_value(cat.Id)
                     else:
-                        element_info["category"] = "Unknown"
                         element_info["category_id"] = None
 
-                    # Add level information if available
-                    try:
-                        level_param = elem.get_Parameter(
-                            DB.BuiltInParameter.FAMILY_LEVEL_PARAM
-                        )
-                        if level_param:
-                            level_id = level_param.AsElementId()
-                            if level_id != DB.ElementId.InvalidElementId:
-                                level_elem = doc.GetElement(level_id)
-                                element_info["level"] = normalize_string(get_element_name(level_elem))
-                                element_info["level_id"] = element_id_value(level_id)
+                    # Add level information only if requested (opt-in)
+                    if include_levels:
+                        try:
+                            level_param = elem.get_Parameter(
+                                DB.BuiltInParameter.FAMILY_LEVEL_PARAM
+                            )
+                            if level_param:
+                                level_id = level_param.AsElementId()
+                                if level_id != DB.ElementId.InvalidElementId:
+                                    lid = element_id_value(level_id)
+                                    if lid in level_cache:
+                                        cached = level_cache[lid]
+                                        element_info["level"] = cached["name"]
+                                        element_info["level_id"] = cached["id"]
+                                    else:
+                                        level_elem = doc.GetElement(level_id)
+                                        lname = normalize_string(get_element_name(level_elem))
+                                        level_cache[lid] = {"name": lname, "id": lid}
+                                        element_info["level"] = lname
+                                        element_info["level_id"] = lid
+                                else:
+                                    element_info["level"] = None
+                                    element_info["level_id"] = None
                             else:
                                 element_info["level"] = None
                                 element_info["level_id"] = None
-                        else:
+                        except Exception:
                             element_info["level"] = None
                             element_info["level_id"] = None
-                    except Exception:
-                        element_info["level"] = None
-                        element_info["level_id"] = None
 
-                    # Add location information if available
-                    try:
-                        location = elem.Location
-                        if hasattr(location, "Point"):
-                            pt = location.Point
-                            element_info["location"] = {
-                                "type": "point",
-                                "x": pt.X,
-                                "y": pt.Y,
-                                "z": pt.Z,
-                            }
-                        elif hasattr(location, "Curve"):
-                            curve = location.Curve
-                            start = curve.GetEndPoint(0)
-                            end = curve.GetEndPoint(1)
-                            element_info["location"] = {
-                                "type": "curve",
-                                "start": {"x": start.X, "y": start.Y, "z": start.Z},
-                                "end": {"x": end.X, "y": end.Y, "z": end.Z},
-                            }
-                        else:
+                    # Add location information only if requested (opt-in)
+                    if include_location:
+                        try:
+                            location = elem.Location
+                            if hasattr(location, "Point"):
+                                pt = location.Point
+                                element_info["location"] = {
+                                    "type": "point",
+                                    "x": pt.X,
+                                    "y": pt.Y,
+                                    "z": pt.Z,
+                                }
+                            elif hasattr(location, "Curve"):
+                                curve = location.Curve
+                                start = curve.GetEndPoint(0)
+                                end = curve.GetEndPoint(1)
+                                element_info["location"] = {
+                                    "type": "curve",
+                                    "start": {"x": start.X, "y": start.Y, "z": start.Z},
+                                    "end": {"x": end.X, "y": end.Y, "z": end.Z},
+                                }
+                            else:
+                                element_info["location"] = {"type": "unknown"}
+                        except Exception:
                             element_info["location"] = {"type": "unknown"}
-                    except Exception:
-                        element_info["location"] = {"type": "unknown"}
 
                     elements_info.append(element_info)
 
                 except Exception as elem_error:
-                    # Skip elements that cause errors but log the issue
                     logger.warning(
-                        "Could not process element {}: {}".format(
-                            element_id_value(elem.Id) if elem else "Unknown", str(elem_error)
-                        )
+                        "Could not process element: {}".format(str(elem_error))
                     )
                     continue
 
-            # Group elements by category for easier analysis
-            elements_by_category = {}
-            for elem_info in elements_info:
-                category = elem_info["category"]
-                if category not in elements_by_category:
-                    elements_by_category[category] = []
-                elements_by_category[category].append(elem_info)
-
-            # Create summary statistics
-            category_counts = {
-                category: len(elements)
-                for category, elements in elements_by_category.items()
-            }
+            truncated = total_elements > len(elements_info)
 
             result = {
                 "status": "success",
                 "view_name": normalize_string(get_element_name(current_view)),
                 "view_id": element_id_value(current_view.Id),
-                "total_elements": len(elements_info),
+                "total_elements": total_elements,
+                "returned_elements": len(elements_info),
+                "limit": limit,
+                "truncated": truncated,
                 "elements": elements_info,
-                "elements_by_category": elements_by_category,
                 "category_counts": category_counts,
             }
+
+            if truncated:
+                result["message"] = "Results truncated: showing {} of {} elements. Use limit parameter to retrieve more.".format(
+                    len(elements_info), total_elements
+                )
 
             return routes.make_response(data=result)
 

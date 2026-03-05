@@ -38,21 +38,32 @@ def register_view_tools(mcp, revit_get, revit_post, revit_image):
         return format_response(response)
 
     @mcp.tool()
-    async def get_current_view_elements(ctx: Context = None) -> str:
+    async def get_current_view_elements(
+        limit: int = 5000,
+        include_levels: bool = False,
+        include_location: bool = False,
+        ctx: Context = None,
+    ) -> str:
         """
-        Get all elements visible in the currently active view in Revit.
+        Get elements visible in the currently active view in Revit.
 
-        Returns detailed information about each element including:
-        - Element ID, name, and type
-        - Category and category ID
-        - Level information (if applicable)
-        - Location information (point or curve)
-        - Summary statistics grouped by category
+        Returns per element: element_id, name, category, category_id.
+        Also returns category_counts (always for ALL elements, even if truncated).
 
-        This is useful for understanding what elements are currently visible
-        and analyzing the content of the active view.
+        If the response contains truncated=true, not all elements were returned.
+        Check total_elements vs returned_elements and increase limit if needed.
+
+        Args:
+            limit: Maximum number of elements to return (default 5000).
+            include_levels: Include level name and level_id per element. Default false.
+            include_location: Include location geometry (point or curve). Default false.
         """
         if ctx:
             await ctx.info("Getting elements in current view...")
-        response = await revit_get("/current_view_elements/", ctx)
+        data = {
+            "limit": limit,
+            "include_levels": include_levels,
+            "include_location": include_location,
+        }
+        response = await revit_post("/current_view_elements/", data, ctx)
         return format_response(response)
