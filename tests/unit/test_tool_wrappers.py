@@ -62,7 +62,7 @@ class TestViewTools:
 
     async def test_list_revit_views(self):
         await self.tools["list_revit_views"](ctx=None)
-        self.mock_get.assert_called_once_with("/list_views/", None, timeout=120.0)
+        self.mock_get.assert_called_once_with("/list_views/", None)
 
     async def test_get_revit_view(self):
         await self.tools["get_revit_view"](view_name="Level 1", ctx=None)
@@ -78,7 +78,6 @@ class TestViewTools:
             "/current_view_elements/",
             {"limit": 5000, "include_levels": False, "include_location": False},
             None,
-            timeout=120.0,
         )
 
 
@@ -172,7 +171,7 @@ class TestColorTools:
     async def test_clear_colors(self):
         await self.tools["clear_colors"](category_name="Walls", ctx=None)
         self.mock_post.assert_called_once_with(
-            "/clear_colors/", {"category_name": "Walls"}, None, timeout=60.0
+            "/clear_colors/", {"category_name": "Walls"}, None
         )
 
     async def test_list_category_parameters(self):
@@ -207,7 +206,7 @@ class TestCodeExecutionTools:
             "/execute_code/",
             {"code": "print('hello')", "description": "Code execution"},
             None,
-            timeout=300.0,
+            timeout=60.0,
         )
         assert result == "hello"
 

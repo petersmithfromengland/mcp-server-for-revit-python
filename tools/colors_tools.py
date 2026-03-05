@@ -50,7 +50,7 @@ def register_colors_tools(mcp, revit_get, revit_post, revit_image=None):
                         category_name, parameter_name
                     )
                 )
-            response = await revit_post("/color_splash/", data, ctx, timeout=120.0)
+            response = await revit_post("/color_splash/", data, ctx, timeout=60.0)
             return format_response(response)
 
         except Exception as e:
@@ -79,7 +79,7 @@ def register_colors_tools(mcp, revit_get, revit_post, revit_image=None):
 
             if ctx:
                 await ctx.info("Clearing color overrides for {} elements".format(category_name))
-            response = await revit_post("/clear_colors/", data, ctx, timeout=60.0)
+            response = await revit_post("/clear_colors/", data, ctx)
             return format_response(response)
 
         except Exception as e:
