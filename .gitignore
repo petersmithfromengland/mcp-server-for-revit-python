@@ -12,3 +12,6 @@ wheels/
 *TODO.md
 .env
 CLAUDE.md
+
+# Generated index caches (rebuilt at runtime)
+external_stems/cache/*.json

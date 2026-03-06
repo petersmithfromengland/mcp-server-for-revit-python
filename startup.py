@@ -1,7 +1,15 @@
 # -*- coding: UTF-8 -*-
 """
 Revit MCP Extension Startup
-Registers all MCP routes and initializes the API
+Registers all MCP routes and initializes the API.
+
+Only two route modules remain:
+  - status         — /status/ health check
+  - code_execution — /execute_code/ (stem execution backend)
+
+All other Revit interactions (including view image export) have been
+migrated to internal stems which generate IronPython code and send
+it through /execute_code/.
 """
 
 from pyrevit import routes
@@ -16,26 +24,9 @@ api = routes.API("revit_mcp")
 def register_routes():
     """Register all MCP route modules"""
     try:
-        # Import and register status routes
         from revit_mcp.status import register_status_routes
 
         register_status_routes(api)
-
-        from revit_mcp.model_info import register_model_info_routes
-
-        register_model_info_routes(api)
-
-        from revit_mcp.views import register_views_routes
-
-        register_views_routes(api)
-
-        from revit_mcp.placement import register_placement_routes
-
-        register_placement_routes(api)
-
-        from revit_mcp.colors import register_color_routes
-
-        register_color_routes(api)
 
         from revit_mcp.code_execution import register_code_execution_routes
 
