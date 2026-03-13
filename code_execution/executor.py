@@ -6,6 +6,10 @@ Sends user-approved IronPython code to the pyRevit Routes API
 endpoint for execution inside Revit.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 async def run_approved_code(
     code: str,
@@ -24,12 +28,18 @@ async def run_approved_code(
     Returns:
         Formatted response string from Revit.
     """
-    from tools.utils import format_response
-
     payload = {"code": code, "description": description}
+
+    logger.info("Executing approved code: %s", description)
+    logger.debug("Code payload length: %d chars", len(code))
 
     if ctx:
         await ctx.info("Executing approved code: {}".format(description))
 
     response = await revit_post("/execute_code/", payload, ctx)
-    return format_response(response)
+    logger.info("Execution response received for: %s", description)
+    logger.debug("Execution response: %s", str(response)[:500])
+
+    if isinstance(response, dict):
+        return str(response.get("result", response))
+    return str(response)

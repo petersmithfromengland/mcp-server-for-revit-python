@@ -46,12 +46,6 @@ if _VENV_DIR.is_dir():
     if _site_pkgs.is_dir() and str(_site_pkgs) not in sys.path:
         site.addsitedir(str(_site_pkgs))
 
-# Use cached HuggingFace models — avoid network calls at query time.
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-# Disable ChromaDB telemetry — prevents network hang in MCP subprocess.
-os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
-os.environ.setdefault("CHROMA_TELEMETRY", "false")
 # ----------------------------------------------------------------------
 
 # -- Logging (must happen before any module that calls getLogger) ------
@@ -89,21 +83,17 @@ mcp = FastMCP(
         "You are connected to a Revit MCP server with a searchable library "
         "of ~2900 pre-built Python helper functions (duHast) for working "
         "with Revit elements.\n\n"
-        "TWO-STAGE WORKFLOW:\n\n"
-        "Stage 1 — DISCOVERY: Call 'plan_revit_action' for EVERY user "
-        "message about Revit (questions, capability requests, task planning). "
-        "This searches the duHast vector database and returns matched "
-        "functions with relevance scores, full signatures, docstrings, "
-        "and import statements. Present those results to the user.\n\n"
-        "Stage 2 — CODE GENERATION: When the user confirms they want code "
-        "written, call 'produce_revit_code'. This runs the full pipeline: "
-        "RAG search → code production sub-agent → code review sub-agent. "
-        "The returned output contains generated IronPython code AND review "
-        "notes. Present both to the user and ask for approval before "
-        "executing anything.\n\n"
+        "WORKFLOW:\n\n"
+        "Call the 'main' tool for EVERY user request about Revit. "
+        "It runs the full pipeline in one call: "
+        "AST+BM25 search → code production sub-agent → code review sub-agent. "
+        "The response contains matched duHast functions, generated IronPython "
+        "code, and review notes. "
+        "Present the code and review notes to the user and ask for approval "
+        "before executing anything.\n\n"
         "Do NOT answer Revit questions from your own training knowledge "
-        "without first calling plan_revit_action. "
-        "Do NOT write code without first calling produce_revit_code."
+        "without first calling main. "
+        "Do NOT write code yourself — always call main and use its output."
     ),
 )
 
@@ -164,32 +154,25 @@ async def _revit_call(
 # Register tools
 logger.info("Registering MCP tools...")
 from code_execution.tools import register_code_execution_tools
-from code_production.tools import register_code_production_tools
-from code_review.tools import register_code_review_tools
 
 register_code_execution_tools(mcp, revit_get, revit_post)
-register_code_production_tools(mcp)
-register_code_review_tools(mcp)
-logger.info("MCP tools registered")
+logger.info("MCP tools registered (1 tool: main)")
 
-# Pre-warm the RAG collection in a background thread so the first tool call
-# does not pay the cold-start cost (ChromaDB + SentenceTransformer load).
-import threading
+# Load the AST+BM25 index at startup.  JSON load + BM25 build typically
+# completes in < 0.5 s, so we do it in the main thread before serving.
+# If the index JSON does not exist yet, get_state() will auto-build it
+# from the library source (takes a few seconds on first run).
+try:
+    from rag.config import load_config
+    from rag.ast_index import get_state
 
-
-def _prewarm_rag():
-    try:
-        from rag.config import load_config
-        from rag.query import prewarm
-
-        cfg = load_config()
-        prewarm(cfg.rag.vector_store_dir, cfg.rag.embedding_model)
-    except Exception as exc:
-        logger.warning("RAG prewarm thread failed: %s", exc)
-
-
-threading.Thread(target=_prewarm_rag, daemon=True, name="rag-prewarm").start()
-logger.info("RAG prewarm thread started")
+    _cfg = load_config()
+    _enabled = [lib for lib in _cfg.libraries if lib.enabled]
+    _lib_path = _enabled[0].path if _enabled else ""
+    get_state(_cfg.rag.vector_store_dir, _lib_path)
+    logger.info("AST index loaded and ready")
+except Exception as _exc:
+    logger.warning("AST index startup load failed: %s", _exc)
 
 
 async def run_combined_async():

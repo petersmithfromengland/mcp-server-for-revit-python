@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Revit MCP Server Configuration
+  ================================
+  This file controls external library paths and settings.
+  Edit the paths below to match your environment.
+-->
+<config>
+
+  <!--
+    allow_implicit_code_execution
+    When false (default), all code must go through a preparation step
+    (produce_revit_code) that surfaces the code for review before execution.
+    When true, the LLM can execute arbitrary code directly without approval.
+  -->
+  <allow_implicit_code_execution>false</allow_implicit_code_execution>
+
+  <external_stems>
+    <!--
+      libraries: External Python libraries to index.
+      Each <library> needs:
+        <name>    Display name used in tool output and cache filenames
+        <path>    Absolute path to the library's root Python package
+        <enabled> Set to false to skip indexing this library
+    -->
+    <libraries>
+      <library>
+        <name>duHast</name>
+        <path>C:\Program Files\Python311\Lib\site-packages\duHast</path>
+        <enabled>true</enabled>
+      </library>
+    </libraries>
+
+    <!--
+      revit_api_xml: Revit API XML documentation file (shipped with Revit SDK).
+      Provides class, method, property, enum, and field signatures.
+    -->
+    <revit_api_xml>tools/RevitAPI.xml</revit_api_xml>
+  </external_stems>
+
+  <!--
+    Search Index Settings
+    =====================
+    Controls the AST+BM25 keyword search used by the main tool to find
+    relevant duHast functions.
+
+    Build the index with:   python -m rag
+    Rebuild after changes:  python -m rag &#45;&#45;force
+  -->
+  <rag>
+    <!-- Chunk size in words for text splitting (used during indexing). -->
+    <chunk_size>500</chunk_size>
+
+    <!-- Overlap between adjacent text chunks in words. -->
+    <chunk_overlap>50</chunk_overlap>
+
+    <!-- Maximum number of results returned per search query. -->
+    <max_results>8</max_results>
+  </rag>
+
+</config>
