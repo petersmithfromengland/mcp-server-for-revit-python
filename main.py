@@ -153,7 +153,7 @@ async def _revit_call(
 
 # Register tools
 logger.info("Registering MCP tools...")
-from code_execution.tools import register_code_execution_tools
+from revit_mcp.tools import register_code_execution_tools
 
 register_code_execution_tools(mcp, revit_get, revit_post)
 logger.info("MCP tools registered (1 tool: main)")

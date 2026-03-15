@@ -15,7 +15,7 @@ import asyncio
 import logging
 
 from mcp.server.fastmcp import Context
-from .workflow import build_action_plan, render_action_plan
+from ..code_execution.workflow import build_action_plan, render_action_plan
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,9 @@ def register_code_execution_tools(mcp, revit_get, revit_post, revit_image=None):
         discovery = render_action_plan(plan)
         logger.info(
             "main stage 1 complete: intent=%s, matches=%d, recommendation=%s",
-            plan.intent, len(plan.rag_matches), plan.recommendation,
+            plan.intent,
+            len(plan.rag_matches),
+            plan.recommendation,
         )
 
         # ----------------------------------------------------------------
@@ -81,6 +83,7 @@ def register_code_execution_tools(mcp, revit_get, revit_post, revit_image=None):
             await ctx.info("Generating code...")
         try:
             from code_production.agent import generate_code
+
             generated = await generate_code(
                 user_request=user_request,
                 rag_context=discovery,
@@ -98,7 +101,10 @@ def register_code_execution_tools(mcp, revit_get, revit_post, revit_image=None):
             await ctx.info("Reviewing code...")
         try:
             from code_review.agent import review_code
-            review = await review_code(user_request=user_request, code=generated, ctx=ctx)
+
+            review = await review_code(
+                user_request=user_request, code=generated, ctx=ctx
+            )
             logger.info("main stage 3 complete: %d chars review", len(review))
         except (ImportError, RuntimeError) as exc:
             logger.warning("Code review unavailable: %s", exc)
