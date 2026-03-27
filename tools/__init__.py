@@ -1,24 +1,27 @@
 # -*- coding: utf-8 -*-
-"""
-Tool registration — core Revit MCP tools.
-
-Only the health-check tool remains here.  All other Revit interactions
-(including view image export) have been migrated to internal stems
-(see ``internal_stems/``).
-"""
+"""Tool registration system for Revit MCP Server"""
 
 
-def register_tools(mcp_server, revit_get_func, revit_post_func, revit_image_func=None):
-    """Register the core Revit tools with the MCP server.
-
-    Only ``get_revit_status`` (health-check) remains as a direct tool.
-    View export is now the ``view.export_image`` stem.
-
-    Other tool groups registered separately:
-      - ``internal_stems.tools.register_internal_stem_tools``
-      - ``external_stems.tools.register_external_stem_tools``
-      - ``code_execution.tools.register_code_execution_tools``
-    """
+def register_tools(mcp_server, revit_get_func, revit_post_func, revit_image_func):
+    """Register all tools with the MCP server"""
+    # Import all tool modules
     from .status_tools import register_status_tools
+    from .view_tools import register_view_tools
+    from .family_tools import register_family_tools
+    from .model_tools import register_model_tools
+    from .colors_tools import register_colors_tools
+    from .code_execution_tools import register_code_execution_tools
+    from .launch_tools import register_launch_tools
+    from .document_tools import register_document_tools
 
+    # Register tools from each module
     register_status_tools(mcp_server, revit_get_func)
+    register_view_tools(mcp_server, revit_get_func, revit_post_func, revit_image_func)
+    register_family_tools(mcp_server, revit_get_func, revit_post_func)
+    register_model_tools(mcp_server, revit_get_func)
+    register_colors_tools(mcp_server, revit_get_func, revit_post_func)
+    register_code_execution_tools(
+        mcp_server, revit_get_func, revit_post_func, revit_image_func
+    )
+    register_launch_tools(mcp_server, revit_get_func)
+    register_document_tools(mcp_server, revit_get_func, revit_post_func)

@@ -35,6 +35,18 @@ def normalize_string(text):
         return u"Unnamed"
 
 
+def element_id_value(element_id):
+    """Get the integer value from an ElementId.
+
+    Revit 2025+ uses .Value (int64), older versions use .IntegerValue (int32).
+    Revit 2026 removed .IntegerValue entirely.
+    """
+    try:
+        return int(element_id.Value)
+    except AttributeError:
+        return int(element_id.IntegerValue)
+
+
 def get_element_name(element):
     """
     Get the name of a Revit element.

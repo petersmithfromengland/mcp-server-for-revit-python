@@ -2,17 +2,18 @@
 import sys
 import httpx
 import anyio
-from mcp.server.fastmcp import FastMCP, Context
-from typing import Dict, Any, Union
+from mcp.server.fastmcp import FastMCP, Image, Context
+import base64
+from typing import Optional, Dict, Any, Union
 
 # Create a generic MCP server for interacting with Revit
 # Use stateless_http=True and json_response=True for better compatibility
 mcp = FastMCP(
-    "Revit MCP Server",
-    host="127.0.0.1",
+    "Revit MCP Server", 
+    host="127.0.0.1", 
     port=8000,
     stateless_http=True,
-    json_response=True,
+    json_response=True
 )
 
 # Configuration
@@ -26,21 +27,32 @@ async def revit_get(endpoint: str, ctx: Context = None, **kwargs) -> Union[Dict,
     return await _revit_call("GET", endpoint, ctx=ctx, **kwargs)
 
 
-async def revit_post(
-    endpoint: str, data: Dict[str, Any], ctx: Context = None, **kwargs
-) -> Union[Dict, str]:
+async def revit_post(endpoint: str, data: Dict[str, Any], ctx: Context = None, **kwargs) -> Union[Dict, str]:
     """Simple POST request to Revit API"""
     return await _revit_call("POST", endpoint, data=data, ctx=ctx, **kwargs)
 
 
-async def _revit_call(
-    method: str,
-    endpoint: str,
-    data: Dict = None,
-    ctx: Context = None,
-    timeout: float = 30.0,
-    params: Dict = None,
-) -> Union[Dict, str]:
+async def revit_image(endpoint: str, ctx: Context = None) -> Union[Image, str]:
+    """GET request that returns an Image object"""
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.get(f"{BASE_URL}{endpoint}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                image_bytes = base64.b64decode(data["image_data"])
+                return Image(data=image_bytes, format="png")
+            else:
+                return f"Error: {response.status_code} - {response.text}"
+    except httpx.TimeoutException:
+        return "Error: Image export timed out after 60 seconds."
+    except Exception as e:
+        msg = str(e) or type(e).__name__
+        return f"Error: {msg}"
+
+
+async def _revit_call(method: str, endpoint: str, data: Dict = None, ctx: Context = None,
+                     timeout: float = 30.0, params: Dict = None) -> Union[Dict, str]:
     """Internal function handling all HTTP calls"""
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -49,40 +61,19 @@ async def _revit_call(
             if method == "GET":
                 response = await client.get(url, params=params)
             else:  # POST
-                response = await client.post(
-                    url, json=data, headers={"Content-Type": "application/json"}
-                )
+                response = await client.post(url, json=data, headers={"Content-Type": "application/json"})
 
-            return (
-                response.json()
-                if response.status_code == 200
-                else f"Error: {response.status_code} - {response.text}"
-            )
+            return response.json() if response.status_code == 200 else f"Error: {response.status_code} - {response.text}"
+    except httpx.TimeoutException:
+        return f"Error: Request timed out after {timeout} seconds. The operation may still be running in Revit."
     except Exception as e:
-        return f"Error: {e}"
+        msg = str(e) or type(e).__name__
+        return f"Error: {msg}"
 
 
 # Register all tools BEFORE the main block
-
-# 1. Core Revit tools (status health-check only)
 from tools import register_tools
-
-register_tools(mcp, revit_get, revit_post)
-
-# 2. Internal stems (parameterized code building blocks)
-from internal_stems.tools import register_internal_stem_tools
-
-register_internal_stem_tools(mcp, revit_get, revit_post)
-
-# 3. External stems (indexed libraries + Revit API docs)
-from external_stems.tools import register_external_stem_tools
-
-register_external_stem_tools(mcp, revit_get, revit_post)
-
-# 4. Code execution (workflow planner + approved-execution)
-from code_execution.tools import register_code_execution_tools
-
-register_code_execution_tools(mcp, revit_get, revit_post)
+register_tools(mcp, revit_get, revit_post, revit_image)
 
 
 async def run_combined_async():
@@ -125,9 +116,7 @@ if __name__ == "__main__":
         transport = "streamable-http"
     elif "--combined" in sys.argv:
         # Run both SSE and streamable-http transports simultaneously
-        print(
-            "Starting combined server with SSE (/sse, /messages/) and streamable-http (/mcp) endpoints..."
-        )
+        print("Starting combined server with SSE (/sse, /messages/) and streamable-http (/mcp) endpoints...")
         anyio.run(run_combined_async)
         sys.exit(0)
 
